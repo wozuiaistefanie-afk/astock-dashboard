@@ -26,7 +26,17 @@ TODAY = dt.date.today().strftime('%Y%m%d')
 START = '20210101'
 END = TODAY
 
-idx = pro.index_classify(level='L1', src='SW2021')
+# 一级 31 个 + 二级重点（用户 2026-11-25 要求：芯片/PCB/消费电子要分开看）
+L1 = pro.index_classify(level='L1', src='SW2021')
+L2_ALL = pro.index_classify(level='L2', src='SW2021')
+L2_KEEP = ['半导体','元件','消费电子','光学光电子','电子化学品Ⅱ','通信设备','计算机设备',
+           '软件开发','IT服务Ⅱ','电网设备','光伏设备','电池','风电设备','医疗器械',
+           '医疗服务','化学制药','中药Ⅱ','白酒Ⅱ','食品加工','饮料乳品','银行','保险Ⅱ',
+           '证券Ⅱ','房地产','建筑装饰','汽车零部件','通用设备','自动化设备','军工电子Ⅱ','航空装备Ⅱ']
+idx = pd.concat([
+    L1.assign(level_tag='一级'),
+    L2_ALL[L2_ALL['industry_name'].isin(L2_KEEP)].assign(level_tag='二级')
+], ignore_index=True)
 rows, series = [], {}
 for _, r in idx.iterrows():
     code, name = r['index_code'], r['industry_name']
@@ -41,7 +51,7 @@ for _, r in idx.iterrows():
         r3 = c.iloc[-1] / c.iloc[-750] - 1 if n >= 750 else None
         r1 = c.iloc[-1] / c.iloc[-250] - 1 if n >= 250 else None
         dd5 = c.iloc[-1] / c.max() - 1
-        rows.append(dict(行业=name, 近5年=r5, 近3年=r3, 近1年=r1, 距5年高=dd5,
+        rows.append(dict(层级=r['level_tag'], 行业=name, 近5年=r5, 近3年=r3, 近1年=r1, 距5年高=dd5,
                         日期=d['trade_date'].iloc[-1], 收盘=float(c.iloc[-1])))
         # 归一化净值（以 5 年前为 1）
         base = c.iloc[0]
@@ -51,7 +61,7 @@ for _, r in idx.iterrows():
     except Exception:
         continue
 
-df = pd.DataFrame(rows).sort_values('近3年', ascending=False)
+df = pd.DataFrame(rows).sort_values(['层级','近3年'], ascending=[True,False])
 df.to_csv(f'板块周期扫描_{TODAY}.csv', index=False, encoding='utf-8-sig')
 print(df.round(4).to_string(index=False))
 print(f'\n已保存 板块周期扫描_{TODAY}.csv（{len(df)} 个行业）')
@@ -59,7 +69,7 @@ print(f'\n已保存 板块周期扫描_{TODAY}.csv（{len(df)} 个行业）')
 # ---------- 生成 HTML 工作台 ----------
 payload = {
     'date': df['日期'].iloc[0] if len(df) else TODAY,
-    'cat': df['行业'].tolist(),
+    'cat': [f"{a}·{b}" if a=='二级' else b for a,b in zip(df['层级'],df['行业'])],
     'r5': [None if pd.isna(x) else round(x * 100, 2) for x in df['近5年']],
     'r3': [None if pd.isna(x) else round(x * 100, 2) for x in df['近3年']],
     'r1': [None if pd.isna(x) else round(x * 100, 2) for x in df['近1年']],
